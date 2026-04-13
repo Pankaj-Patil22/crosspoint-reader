@@ -25,6 +25,7 @@
 #include "components/icons/settings2.h"
 #include "components/icons/text24.h"
 #include "components/icons/transfer.h"
+#include "components/icons/rss.h"
 #include "components/icons/wifi.h"
 #include "fontIds.h"
 
@@ -118,6 +119,8 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return WifiIcon;
       case UIIcon::Hotspot:
         return HotspotIcon;
+      case UIIcon::Rss:
+        return RssIcon;
       default:
         return nullptr;
     }

@@ -107,4 +107,10 @@ class CrossPointWebServer {
   void handleSettingsPage() const;
   void handleGetSettings() const;
   void handlePostSettings();
+
+  // RSS feed handlers
+  void handleRssFeedsPage() const;
+  void handleGetRssFeeds() const;
+  void handleAddRssFeed();
+  void handleDeleteRssFeed();
 };

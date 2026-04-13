@@ -11,10 +11,12 @@
 #include <algorithm>
 
 #include "CrossPointSettings.h"
+#include "RssFeedStore.h"
 #include "SettingsList.h"
 #include "WebDAVHandler.h"
 #include "html/FilesPageHtml.generated.h"
 #include "html/HomePageHtml.generated.h"
+#include "html/RssFeedsPageHtml.generated.h"
 #include "html/SettingsPageHtml.generated.h"
 #include "html/js/jszip_minJs.generated.h"
 
@@ -159,6 +161,12 @@ void CrossPointWebServer::begin() {
   server->on("/settings", HTTP_GET, [this] { handleSettingsPage(); });
   server->on("/api/settings", HTTP_GET, [this] { handleGetSettings(); });
   server->on("/api/settings", HTTP_POST, [this] { handlePostSettings(); });
+
+  // RSS feed endpoints
+  server->on("/rss", HTTP_GET, [this] { handleRssFeedsPage(); });
+  server->on("/api/rss-feeds", HTTP_GET, [this] { handleGetRssFeeds(); });
+  server->on("/api/rss-feeds/add", HTTP_POST, [this] { handleAddRssFeed(); });
+  server->on("/api/rss-feeds/delete", HTTP_POST, [this] { handleDeleteRssFeed(); });
 
   server->onNotFound([this] { handleNotFound(); });
   LOG_DBG("WEB", "[MEM] Free heap after route setup: %d bytes", ESP.getFreeHeap());
@@ -1426,4 +1434,91 @@ void CrossPointWebServer::onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* 
     default:
       break;
   }
+}
+
+// ---------------------------------------------------------------------------
+// RSS feed handlers
+// ---------------------------------------------------------------------------
+
+void CrossPointWebServer::handleRssFeedsPage() const {
+  server->sendHeader("Content-Encoding", "gzip");
+  server->send_P(200, "text/html", reinterpret_cast<const char*>(RssFeedsPageHtml),
+                 RssFeedsPageHtmlCompressedSize);
+}
+
+void CrossPointWebServer::handleGetRssFeeds() const {
+  const auto& feeds = RSS_FEEDS.getFeeds();
+
+  JsonDocument doc;
+  JsonArray arr = doc.to<JsonArray>();
+  for (const auto& feed : feeds) {
+    JsonObject obj = arr.add<JsonObject>();
+    obj["name"] = feed.name;
+    obj["url"] = feed.url;
+  }
+
+  String json;
+  serializeJson(doc, json);
+  server->send(200, "application/json", json);
+  LOG_DBG("WEB", "Served %zu RSS feeds", feeds.size());
+}
+
+void CrossPointWebServer::handleAddRssFeed() {
+  if (!server->hasArg("url") || !server->hasArg("name")) {
+    server->send(400, "text/plain", "Missing 'url' or 'name' parameter");
+    return;
+  }
+  const String url = server->arg("url");
+  const String name = server->arg("name");
+
+  if (url.isEmpty() || name.isEmpty()) {
+    server->send(400, "text/plain", "URL and name must not be empty");
+    return;
+  }
+
+  if (url.length() > 512 || name.length() > 128) {
+    server->send(400, "text/plain", "URL or name too long");
+    return;
+  }
+
+  if (!RSS_FEEDS.addFeed(name.c_str(), url.c_str())) {
+    server->send(409, "text/plain", "Feed list is full or feed already exists");
+    return;
+  }
+
+  if (!RSS_FEEDS.saveToFile()) {
+    server->send(500, "text/plain", "Failed to save feeds to SD card");
+    return;
+  }
+
+  LOG_DBG("WEB", "RSS feed added via web: %s -> %s", name.c_str(), url.c_str());
+  server->send(200, "text/plain", "Feed added");
+}
+
+void CrossPointWebServer::handleDeleteRssFeed() {
+  if (!server->hasArg("url")) {
+    server->send(400, "text/plain", "Missing 'url' parameter");
+    return;
+  }
+
+  const String url = server->arg("url");
+  if (url.isEmpty()) {
+    server->send(400, "text/plain", "URL must not be empty");
+    return;
+  }
+
+  if (!RSS_FEEDS.removeFeedByUrl(url.c_str())) {
+    server->send(404, "text/plain", "Feed not found");
+    return;
+  }
+
+  if (!RSS_FEEDS.saveToFile()) {
+    server->send(500, "text/plain", "Failed to save feeds to SD card");
+    return;
+  }
+
+  RSS_FEEDS.cleanupFiles(std::string(url.c_str()));
+
+  LOG_DBG("WEB", "RSS feed deleted via web: %s", url.c_str());
+  server->send(200, "text/plain", "Feed deleted");
 }

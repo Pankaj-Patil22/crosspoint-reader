@@ -34,11 +34,15 @@ void TxtReaderActivity::onEnter() {
   txt->setupCacheDir();
 
   // Save current txt as last opened file and add to recent books
+  // Skip RSS articles (/.crosspoint/rss_*.txt) — they are temporary article files
   auto filePath = txt->getPath();
   auto fileName = filePath.substr(filePath.rfind('/') + 1);
-  APP_STATE.openEpubPath = filePath;
-  APP_STATE.saveToFile();
-  RECENT_BOOKS.addBook(filePath, fileName, "", "");
+  const bool isRssArticle = filePath.rfind("/.crosspoint/rss_", 0) == 0;
+  if (!isRssArticle) {
+    APP_STATE.openEpubPath = filePath;
+    APP_STATE.saveToFile();
+    RECENT_BOOKS.addBook(filePath, fileName, "", "");
+  }
 
   // Trigger first update
   requestUpdate();

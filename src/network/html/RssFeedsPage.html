@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RSS Feeds – CrossPoint Reader</title>
+    <style>
+      :root {
+        --font-color: #333;
+        --bg: #f5f5f5;
+        --title-color: #2c3e50;
+        --card-bg: #FFF;
+        --label-color: #7f8c8d;
+        --border-color: #eee;
+        --accent-color: rgb(110, 154, 130);
+        --accent-hover-color: #5a8c73;
+        --danger-color: #e74c3c;
+        --danger-hover-color: #c0392b;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --font-color: #f5f5f5;
+          --bg: #333;
+          --title-color: #ecf0f1;
+          --card-bg: #444;
+          --label-color: #bdc3c7;
+          --border-color: #555;
+          color-scheme: dark;
+        }
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: var(--bg);
+        color: var(--font-color);
+      }
+      h1 { color: var(--title-color); border-bottom: 2px solid var(--accent-color); padding-bottom: 10px; }
+      h2 { color: var(--title-color); margin-top: 0; }
+      .card { background: var(--card-bg); border-radius: 8px; padding: 20px; margin: 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+      .nav-links { margin: 20px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+      .nav-links a { padding: 10px 20px; color: var(--font-color); text-decoration: none; border-radius: 4px; }
+      .nav-links a.active { background-color: var(--accent-color); color: white; }
+      .nav-links a:not(.active):hover { background-color: var(--accent-hover-color); color: white; }
+      .feed-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border-color);
+      }
+      .feed-row:last-child { border-bottom: none; }
+      .feed-info { flex: 1; min-width: 0; }
+      .feed-name { font-weight: 600; color: var(--title-color); }
+      .feed-url { font-size: 0.82em; color: var(--label-color); word-break: break-all; margin-top: 2px; }
+      .btn {
+        padding: 7px 16px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        white-space: nowrap;
+      }
+      .btn-danger { background-color: var(--danger-color); color: white; }
+      .btn-danger:hover { background-color: var(--danger-hover-color); }
+      .btn-primary { background-color: var(--accent-color); color: white; }
+      .btn-primary:hover { background-color: var(--accent-hover-color); }
+      .add-form { display: flex; flex-direction: column; gap: 12px; }
+      .form-row { display: flex; flex-direction: column; gap: 4px; }
+      .form-row label { font-weight: 600; font-size: 0.9em; color: var(--label-color); }
+      .form-row input {
+        padding: 9px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg);
+        color: var(--font-color);
+        font-size: 1em;
+      }
+      .form-row input:focus { outline: 2px solid var(--accent-color); }
+      .empty-msg { color: var(--label-color); text-align: center; padding: 20px 0; font-style: italic; }
+      .toast {
+        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+        background: #27ae60; color: white; padding: 10px 24px;
+        border-radius: 20px; font-size: 0.95em; display: none; z-index: 9999;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      }
+      .toast.error { background: var(--danger-color); }
+    </style>
+  </head>
+  <body>
+    <h1>📡 CrossPoint Reader</h1>
+
+    <div class="nav-links">
+      <a href="/">Home</a>
+      <a href="/files">File Manager</a>
+      <a href="/settings">Settings</a>
+      <a href="/rss" class="active">RSS Feeds</a>
+    </div>
+
+    <div class="card">
+      <h2>Configured Feeds</h2>
+      <div id="feed-list"><p class="empty-msg">Loading…</p></div>
+    </div>
+
+    <div class="card">
+      <h2>Add New Feed</h2>
+      <div class="add-form">
+        <div class="form-row">
+          <label for="feed-url">Feed URL</label>
+          <input type="url" id="feed-url" placeholder="https://www.royalroad.com/fiction/syndication/12345" />
+        </div>
+        <div class="form-row">
+          <label for="feed-name">Display Name</label>
+          <input type="text" id="feed-name" placeholder="My Story" maxlength="64" />
+        </div>
+        <button class="btn btn-primary" onclick="addFeed()">Add Feed</button>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+  <script>
+    function showToast(msg, isError) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast' + (isError ? ' error' : '');
+      t.style.display = 'block';
+      setTimeout(() => { t.style.display = 'none'; }, 2800);
+    }
+
+    async function loadFeeds() {
+      try {
+        const r = await fetch('/api/rss-feeds');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const feeds = await r.json();
+        renderFeeds(feeds);
+      } catch (e) {
+        document.getElementById('feed-list').innerHTML = '<p class="empty-msg">Failed to load feeds.</p>';
+      }
+    }
+
+    function renderFeeds(feeds) {
+      const el = document.getElementById('feed-list');
+      if (!feeds || feeds.length === 0) {
+        el.innerHTML = '<p class="empty-msg">No feeds configured yet.</p>';
+        return;
+      }
+      el.innerHTML = feeds.map((f, i) => `
+        <div class="feed-row" id="feed-${i}">
+          <div class="feed-info">
+            <div class="feed-name">${escHtml(f.name)}</div>
+            <div class="feed-url">${escHtml(f.url)}</div>
+          </div>
+          <button class="btn btn-danger"
+                  data-url="${escHtml(f.url)}"
+                  data-name="${escHtml(f.name)}"
+                  onclick="deleteFeed(this)">Delete</button>
+        </div>
+      `).join('');
+    }
+
+    async function addFeed() {
+      const url = document.getElementById('feed-url').value.trim();
+      const name = document.getElementById('feed-name').value.trim();
+      if (!url) { showToast('Please enter a feed URL', true); return; }
+      if (!name) { showToast('Please enter a display name', true); return; }
+
+      try {
+        const form = new URLSearchParams();
+        form.append('url', url);
+        form.append('name', name);
+        const r = await fetch('/api/rss-feeds/add', { method: 'POST', body: form });
+        if (!r.ok) { showToast('Failed to add feed: ' + await r.text(), true); return; }
+        document.getElementById('feed-url').value = '';
+        document.getElementById('feed-name').value = '';
+        showToast('Feed added!');
+        loadFeeds();
+      } catch (e) {
+        showToast('Error: ' + e.message, true);
+      }
+    }
+
+    async function deleteFeed(btn) {
+      const url = btn.dataset.url;
+      const name = btn.dataset.name;
+      if (!confirm('Delete feed "' + name + '"?')) return;
+      try {
+        const form = new URLSearchParams();
+        form.append('url', url);
+        const r = await fetch('/api/rss-feeds/delete', { method: 'POST', body: form });
+        if (!r.ok) { showToast('Failed to delete feed', true); return; }
+        showToast('Feed deleted');
+        loadFeeds();
+      } catch (e) {
+        showToast('Error: ' + e.message, true);
+      }
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    window.onload = loadFeeds;
+  </script>
+  </body>
+</html>

@@ -13,15 +13,17 @@ Welcome to the **CrossPoint** firmware. This guide outlines the hardware control
     - [3.2 Reading Mode](#32-reading-mode)
     - [3.3 Browse Files Screen](#33-browse-files-screen)
     - [3.4 Recent Books Screen](#34-recent-books-screen)
-    - [3.5 File Transfer Screen](#35-file-transfer-screen)
-      - [3.5.1 Calibre Wireless Transfers](#351-calibre-wireless-transfers)
-    - [3.6 Settings](#36-settings)
-      - [3.6.1 Display](#361-display)
-      - [3.6.2 Reader](#362-reader)
-      - [3.6.3 Controls](#363-controls)
-      - [3.6.4 System](#364-system)
-      - [3.6.5 KOReader Sync Quick Setup](#365-koreader-sync-quick-setup)
-    - [3.7 Sleep Screen](#37-sleep-screen)
+    - [3.5 RSS Feeds](#35-rss-feeds)
+      - [3.5.1 Editing feeds directly (advanced)](#351-editing-feeds-directly-advanced)
+    - [3.6 File Transfer Screen](#36-file-transfer-screen)
+      - [3.6.1 Calibre Wireless Transfers](#361-calibre-wireless-transfers)
+    - [3.7 Settings](#37-settings)
+      - [3.7.1 Display](#371-display)
+      - [3.7.2 Reader](#372-reader)
+      - [3.7.3 Controls](#373-controls)
+      - [3.7.4 System](#374-system)
+      - [3.7.5 KOReader Sync Quick Setup](#375-koreader-sync-quick-setup)
+    - [3.8 Sleep Screen](#38-sleep-screen)
   - [4. Reading Mode](#4-reading-mode)
     - [Page Turning](#page-turning)
     - [Chapter Navigation](#chapter-navigation)
@@ -42,7 +44,7 @@ The device utilises the standard buttons on the Xteink X4 (in the same layout as
 | **Bottom Edge** | **Back**, **Confirm**, **Left**, **Right**           |
 | **Right Side**  | **Power**, **Volume Up**, **Volume Down**, **Reset** |
 
-Button layout can be customized in the **[Controls Settings](#363-controls)**.
+Button layout can be customized in the **[Controls Settings](#373-controls)**.
 
 ### Taking a Screenshot
 When the Power Button and Volume Down button are pressed at the same time, it will take a screenshot and save it in the folder `screenshots/`.
@@ -56,7 +58,7 @@ Alternatively, while reading a book, press the **Confirm** button to open the re
 ### Power On / Off
 
 To turn the device on or off, **press and hold the Power button for approximately half a second**.
-In the **[Controls Settings](#363-controls)** you can configure the power button to turn the device off with a short press instead of a long one.
+In the **[Controls Settings](#373-controls)** you can configure the power button to turn the device off with a short press instead of a long one.
 
 To reboot the device (for example after a firmware update or if it's frozen), press and release the Reset button, and then quickly press and hold the Power button for a few seconds.
 
@@ -73,7 +75,7 @@ Upon turning the device on for the first time, you will be placed on the **[Home
 
 ### 3.1 Home Screen
 
-The Home screen is the main entry point to the firmware. From here you can navigate to **[Reading Mode](#4-reading-mode)** with the most recently read book, the **[Browse Files](#33-browse-files-screen)** screen, the **[Recent Books](#34-recent-books-screen)** screen, the **[File Transfer](#35-file-transfer-screen)** screen, or **[Settings](#36-settings)**.
+The Home screen is the main entry point to the firmware. From here you can navigate to **[Reading Mode](#4-reading-mode)** with the most recently read book, the **[Browse Files](#33-browse-files-screen)** screen, the **[Recent Books](#34-recent-books-screen)** screen, **[RSS Feeds](#35-rss-feeds)**, the **[File Transfer](#36-file-transfer-screen)** screen, or **[Settings](#37-settings)**.
 
 ### 3.2 Reading Mode
 
@@ -91,7 +93,77 @@ The Browse Files screen acts as a file and folder browser.
 
 The Recent Books screen lists the most recently opened books in a chronological view, displaying title and author.
 
-### 3.5 File Transfer Screen
+### 3.5 RSS Feeds
+
+The RSS Feeds screen lets you subscribe to RSS feeds (such as stories from Royal Road) and read new chapters directly on the device.
+
+#### Adding a feed on the device
+
+1. From the **Home** screen, select **RSS Feeds**.
+2. Navigate to **+ Add RSS Feed** at the bottom of the list and press **Confirm**.
+3. Type the feed URL (e.g. `https://www.royalroad.com/fiction/syndication/12345`) and press **Done**.
+4. Type a display name for the feed (e.g. `My Story`) and press **Done**.
+
+The feed is saved and will appear in the list immediately.
+
+#### Adding a feed via the web interface
+
+If you find it easier to type on a keyboard, you can manage feeds from a browser while the device is in **File Transfer** mode:
+
+1. On the device: go to **File Transfer** and connect to WiFi.
+2. On your computer: open `http://crosspoint.local` in a browser and click **RSS Feeds** in the navigation bar.
+3. Paste the feed URL and enter a display name, then click **Add Feed**.
+
+Feeds added via the web interface appear on the device immediately — and vice versa — because both use the same saved list.
+
+#### Reading a feed
+
+1. Select a feed from the **RSS Feeds** list and press **Confirm**.
+2. The device connects to WiFi, fetches the feed, and shows a list of articles/chapters.
+3. Select an article and press **Confirm** to open it in the reader.
+
+Navigation inside an article works the same as reading a book — use the page-turn buttons to move between pages and **Back** to return to the article list.
+
+#### Deleting a feed
+
+On the device: navigate to the feed you want to remove, then **press and hold Confirm** until a confirmation prompt appears. Press **Confirm** again to delete, or **Cancel** to keep it.
+
+Via the web interface: click the **Delete** button next to the feed.
+
+> [!NOTE]
+> Article content is saved to the SD card (in `/.crosspoint/`) the first time a feed is loaded. Re-opening the same article is instant since no network request is needed.
+
+#### 3.5.1 Editing feeds directly (advanced)
+
+If you want to bulk-add or bulk-edit feeds without going through the UI, you can edit the feeds file directly on the SD card.
+
+**File location:** `/.crosspoint/rss_feeds.json`
+
+**Format:**
+```json
+[
+  { "name": "My Story", "url": "https://www.royalroad.com/fiction/syndication/12345" },
+  { "name": "Another Story", "url": "https://www.royalroad.com/fiction/syndication/67890" }
+]
+```
+
+Each entry has exactly two fields:
+- `"name"` — the display name shown on the device
+- `"url"` — the full RSS feed URL
+
+**Steps:**
+
+1. Connect the device to a computer with the web file manager (File Transfer mode), or remove the SD card and insert it into a card reader.
+2. Navigate to the `/.crosspoint/` folder (it may be hidden — enable hidden files in your file manager).
+3. Open `rss_feeds.json` in a text editor, add or edit entries following the format above, and save.
+4. Safely eject the card (if removed) or disconnect from the web interface, then restart the device.
+
+> [!WARNING]
+> The file must be valid JSON. An invalid file will be ignored and your feeds list will appear empty. You can validate JSON at any online JSON validator before saving.
+
+---
+
+### 3.6 File Transfer Screen
 
 The File Transfer screen allows you to upload new e-books to the device. When you enter the screen, you'll be prompted with a WiFi selection dialog and then your X4 will start hosting a web server.
 
@@ -100,7 +172,7 @@ See the [webserver docs](./docs/webserver.md) for more information on how to con
 > [!TIP]
 > Advanced users can also manage files programmatically or via the command line using `curl`. See the [webserver docs](./docs/webserver.md) for details.
 
-### 3.5.1 Calibre Wireless Transfers
+### 3.6.1 Calibre Wireless Transfers
 
 CrossPoint supports sending books from Calibre using the CrossPoint Reader device plugin.
 
@@ -112,16 +184,16 @@ CrossPoint supports sending books from Calibre using the CrossPoint Reader devic
 3. Make sure your computer is on the same WiFi network.
 4. In Calibre, click "Send to device" to transfer books.
 
-### 3.6 Settings
+### 3.7 Settings
 
 The Settings screen allows you to configure the device's behavior. There are a few settings you can adjust:
 
-#### 3.6.1 Display
+#### 3.7.1 Display
 
 - **Sleep Screen**: Which sleep screen to display when the device sleeps:
   - "Dark" (default) - The default dark Crosspoint logo sleep screen
   - "Light" - The same default sleep screen, on a white background
-  - "Custom" - Custom images from the SD card; see [Sleep Screen](#37-sleep-screen) below for more information
+  - "Custom" - Custom images from the SD card; see [Sleep Screen](#38-sleep-screen) below for more information
   - "Cover" - The book cover image (Note: this is experimental and may not work as expected)
   - "None" - A blank screen
   - "Cover + Custom" - The book cover image, falls back to "Custom" behavior
@@ -153,7 +225,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "OFF" (default) - Disable the fix
   - "ON" - Enable the fix
 
-#### 3.6.2 Reader
+#### 3.7.2 Reader
 - **Reader Font Family**: Choose the font used for reading:
   - "Bookerly" (default) - Amazon's reading font
   - "Noto Sans" - Google's sans-serif font
@@ -175,7 +247,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "OFF" - Paragraphs will not have vertical space added, but will have first-line indentation
 - **Text Anti-Aliasing**: Whether to show smooth grey edges (anti-aliasing) on text in reading mode. Note this slows down page turns slightly.
 
-#### 3.6.3 Controls
+#### 3.7.3 Controls
 
 - **Remap Front Buttons**: A menu for customising the function of each bottom edge button.
 - **Side Button Layout (reader)**: Swap the order of the up and down volume buttons from "Prev/Next" (default) to "Next/Prev". This change is only in effect when reading.
@@ -188,7 +260,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Sleep" - A short press puts the device into sleep mode
   - "Page Turn" - A short press in reading mode turns to the next page; a long press turns the device off
 
-#### 3.6.4 System
+#### 3.7.4 System
 
 - **Time to Sleep**: Set the duration of inactivity before the device automatically goes to sleep; options are 1, 5, 10 (default), 15 or 30 minutes.
 
@@ -199,7 +271,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
 - **Check for updates**: Check for Crosspoint firmware updates over WiFi.
 - **Language**: Set the system language (see **[Supported Languages](#supported-languages)** for more information).
 
-#### 3.6.5 KOReader Sync Quick Setup
+#### 3.7.5 KOReader Sync Quick Setup
 
 CrossPoint can sync reading progress with KOReader-compatible sync servers.
 It also interoperates with KOReader apps/devices when they use the same server and credentials.
@@ -306,7 +378,7 @@ If you use the HTTPS listener, use `https://<server-ip>:7200` (`curl -k` only fo
    - Choose **Apply Remote** to jump to remote progress.
    - Choose **Upload Local** to push current progress.
 
-### 3.7 Sleep Screen
+### 3.8 Sleep Screen
 
 The **Sleep Screen** setting controls what is displayed when the device goes to sleep:
 
@@ -350,7 +422,7 @@ Once you have opened a book, the button layout changes to facilitate reading.
 | **Previous Page** | Press **Left** _or_ **Volume Up**    |
 | **Next Page**     | Press **Right** _or_ **Volume Down** |
 
-The role of the volume (side) buttons can be swapped in the **[Controls Settings](#363-controls)**.
+The role of the volume (side) buttons can be swapped in the **[Controls Settings](#373-controls)**.
 
 If the **Short Power Button Click** setting is set to "Page Turn", you can also turn to the next page by briefly pressing the Power button.
 
@@ -358,7 +430,7 @@ If the **Short Power Button Click** setting is set to "Page Turn", you can also 
 * **Next Chapter:** Press and **hold** the **Right** (or **Volume Down**) button briefly, then release.
 * **Previous Chapter:** Press and **hold** the **Left** (or **Volume Up**) button briefly, then release.
 
-This feature can be disabled in the **[Controls Settings](#363-controls)** to help avoid changing chapters by mistake.
+This feature can be disabled in the **[Controls Settings](#373-controls)** to help avoid changing chapters by mistake.
 
 
 ### System Navigation
