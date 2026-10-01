@@ -71,8 +71,8 @@ class XtcParser {
                              size_t chunkSize = 1024);
 
   // Get title/author from metadata
-  std::string getTitle() const { return m_title; }
-  std::string getAuthor() const { return m_author; }
+  const std::string& getTitle() const { return m_title; }
+  const std::string& getAuthor() const { return m_author; }
 
   bool hasChapters() const { return m_hasChapters; }
   const std::vector<ChapterInfo>& getChapters();
@@ -84,7 +84,7 @@ class XtcParser {
   XtcError getLastError() const { return m_lastError; }
 
  private:
-  FsFile m_file;
+  HalFile m_file;
   std::string m_filepath;
   bool m_isOpen;
   XtcHeader m_header;

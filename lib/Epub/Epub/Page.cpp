@@ -1,13 +1,29 @@
 #include "Page.h"
 
+#include <GfxRenderer.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <Serialization.h>
+
+namespace {
+
+template <typename Predicate>
+void renderFilteredPageElements(const std::vector<std::unique_ptr<PageElement>>& elements, GfxRenderer& renderer,
+                                const int fontId, const int xOffset, const int yOffset, Predicate&& predicate) {
+  for (const auto& element : elements) {
+    if (predicate(*element)) {
+      element->render(renderer, fontId, xOffset, yOffset);
+    }
+  }
+}
+
+}  // namespace
 
 void PageLine::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) {
   block->render(renderer, fontId, xPos + xOffset, yPos + yOffset);
 }
 
-bool PageLine::serialize(FsFile& file) {
+bool PageLine::serialize(HalFile& file) {
   serialization::writePod(file, xPos);
   serialization::writePod(file, yPos);
 
@@ -15,14 +31,24 @@ bool PageLine::serialize(FsFile& file) {
   return block->serialize(file);
 }
 
-std::unique_ptr<PageLine> PageLine::deserialize(FsFile& file) {
+std::unique_ptr<PageLine> PageLine::deserialize(HalFile& file) {
   int16_t xPos;
   int16_t yPos;
   serialization::readPod(file, xPos);
   serialization::readPod(file, yPos);
 
   auto tb = TextBlock::deserialize(file);
-  return std::unique_ptr<PageLine>(new PageLine(std::move(tb), xPos, yPos));
+  if (!tb) {
+    LOG_ERR("PGE", "Deserialization failed: null TextBlock");
+    return nullptr;
+  }
+
+  auto line = makeUniqueNoThrow<PageLine>(std::move(tb), xPos, yPos);
+  if (!line) {
+    LOG_ERR("PGE", "Deserialization failed: could not allocate PageLine");
+    return nullptr;
+  }
+  return line;
 }
 
 void PageImage::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) {
@@ -30,7 +56,11 @@ void PageImage::render(GfxRenderer& renderer, const int fontId, const int xOffse
   imageBlock->render(renderer, xPos + xOffset, yPos + yOffset);
 }
 
-bool PageImage::serialize(FsFile& file) {
+void PageImage::renderPlaceholder(GfxRenderer& renderer, const int xOffset, const int yOffset) const {
+  imageBlock->renderPlaceholder(renderer, xPos + xOffset, yPos + yOffset);
+}
+
+bool PageImage::serialize(HalFile& file) {
   serialization::writePod(file, xPos);
   serialization::writePod(file, yPos);
 
@@ -38,23 +68,87 @@ bool PageImage::serialize(FsFile& file) {
   return imageBlock->serialize(file);
 }
 
-std::unique_ptr<PageImage> PageImage::deserialize(FsFile& file) {
+std::unique_ptr<PageImage> PageImage::deserialize(HalFile& file) {
   int16_t xPos;
   int16_t yPos;
   serialization::readPod(file, xPos);
   serialization::readPod(file, yPos);
 
   auto ib = ImageBlock::deserialize(file);
-  return std::unique_ptr<PageImage>(new PageImage(std::move(ib), xPos, yPos));
+  if (!ib) {
+    LOG_ERR("PGE", "Deserialization failed: null ImageBlock");
+    return nullptr;
+  }
+  auto image = makeUniqueNoThrow<PageImage>(std::move(ib), xPos, yPos);
+  if (!image) {
+    LOG_ERR("PGE", "Deserialization failed: could not allocate PageImage");
+    return nullptr;
+  }
+  return image;
+}
+
+void PageHorizontalRule::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) {
+  (void)fontId;
+  if (width == 0 || thickness == 0) {
+    return;
+  }
+
+  renderer.drawLine(xPos + xOffset, yPos + yOffset, xPos + xOffset + width - 1, yPos + yOffset, thickness, true);
+}
+
+bool PageHorizontalRule::serialize(HalFile& file) {
+  serialization::writePod(file, xPos);
+  serialization::writePod(file, yPos);
+  serialization::writePod(file, width);
+  serialization::writePod(file, thickness);
+  return true;
+}
+
+std::unique_ptr<PageHorizontalRule> PageHorizontalRule::deserialize(HalFile& file) {
+  int16_t xPos = 0;
+  int16_t yPos = 0;
+  uint16_t width = 0;
+  uint8_t thickness = 0;
+  serialization::readPod(file, xPos);
+  serialization::readPod(file, yPos);
+  serialization::readPod(file, width);
+  serialization::readPod(file, thickness);
+
+  if (width == 0 || thickness == 0) {
+    LOG_ERR("PGE", "Deserialization failed: invalid horizontal rule metadata (width=%u thickness=%u)", width,
+            thickness);
+    return nullptr;
+  }
+
+  auto rule = makeUniqueNoThrow<PageHorizontalRule>(width, thickness, xPos, yPos);
+  if (!rule) {
+    LOG_ERR("PGE", "Deserialization failed: could not allocate PageHorizontalRule");
+    return nullptr;
+  }
+  return rule;
 }
 
 void Page::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) const {
-  for (auto& element : elements) {
-    element->render(renderer, fontId, xOffset, yOffset);
+  renderFilteredPageElements(elements, renderer, fontId, xOffset, yOffset, [](const PageElement&) { return true; });
+}
+
+void Page::renderImages(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) const {
+  renderFilteredPageElements(elements, renderer, fontId, xOffset, yOffset,
+                             [](const PageElement& element) { return element.getTag() == TAG_PageImage; });
+}
+
+void Page::renderWithImagePlaceholders(GfxRenderer& renderer, const int fontId, const int xOffset,
+                                       const int yOffset) const {
+  for (const auto& element : elements) {
+    if (element->getTag() == TAG_PageImage) {
+      static_cast<const PageImage&>(*element).renderPlaceholder(renderer, xOffset, yOffset);
+    } else {
+      element->render(renderer, fontId, xOffset, yOffset);
+    }
   }
 }
 
-bool Page::serialize(FsFile& file) const {
+bool Page::serialize(HalFile& file) const {
   const uint16_t count = elements.size();
   serialization::writePod(file, count);
 
@@ -79,14 +173,42 @@ bool Page::serialize(FsFile& file) const {
     }
   }
 
+  const uint16_t linkCount = std::min<uint16_t>(links.size(), MAX_LINKS_PER_PAGE);
+  serialization::writePod(file, linkCount);
+  for (uint16_t i = 0; i < linkCount; i++) {
+    const auto& link = links[i];
+    if (file.write(link.href, sizeof(link.href)) != sizeof(link.href)) {
+      LOG_ERR("PGE", "Failed to write link %u", i);
+      return false;
+    }
+    serialization::writePod(file, link.x);
+    serialization::writePod(file, link.y);
+    serialization::writePod(file, link.width);
+    serialization::writePod(file, link.height);
+  }
+
   return true;
 }
 
-std::unique_ptr<Page> Page::deserialize(FsFile& file) {
-  auto page = std::unique_ptr<Page>(new Page());
+std::unique_ptr<Page> Page::deserialize(HalFile& file) {
+  auto page = makeUniqueNoThrow<Page>();
+  if (!page) {
+    LOG_ERR("PGE", "Deserialization failed: could not allocate Page");
+    return nullptr;
+  }
 
   uint16_t count;
   serialization::readPod(file, count);
+
+  // Reserve up front so a page load costs one allocation for the element vector
+  // instead of a grow-copy-free cycle every doubling. `count` is untrusted (it
+  // comes straight off the SD cache), so clamp it: a real page holds a few dozen
+  // elements, while a corrupt header could ask for 65535 * sizeof(unique_ptr) and
+  // abort() on the failed allocation (vector's operator new is throwing, and this
+  // firmware builds with -fno-exceptions). Under-reserving is harmless -- the
+  // push_back path below still grows normally.
+  static constexpr uint16_t RESERVE_CAP = 256;
+  page->elements.reserve(std::min(count, RESERVE_CAP));
 
   for (uint16_t i = 0; i < count; i++) {
     uint8_t tag;
@@ -94,10 +216,22 @@ std::unique_ptr<Page> Page::deserialize(FsFile& file) {
 
     if (tag == TAG_PageLine) {
       auto pl = PageLine::deserialize(file);
+      if (!pl) {
+        return nullptr;
+      }
       page->elements.push_back(std::move(pl));
     } else if (tag == TAG_PageImage) {
       auto pi = PageImage::deserialize(file);
+      if (!pi) {
+        return nullptr;
+      }
       page->elements.push_back(std::move(pi));
+    } else if (tag == TAG_PageHorizontalRule) {
+      auto rule = PageHorizontalRule::deserialize(file);
+      if (!rule) {
+        return nullptr;
+      }
+      page->elements.push_back(std::move(rule));
     } else {
       LOG_ERR("PGE", "Deserialization failed: Unknown tag %u", tag);
       return nullptr;
@@ -121,6 +255,30 @@ std::unique_ptr<Page> Page::deserialize(FsFile& file) {
     }
     entry.number[sizeof(entry.number) - 1] = '\0';
     entry.href[sizeof(entry.href) - 1] = '\0';
+  }
+
+  uint16_t linkCount;
+  serialization::readPod(file, linkCount);
+  if (linkCount > MAX_LINKS_PER_PAGE) {
+    LOG_ERR("PGE", "Invalid link count %u", linkCount);
+    return nullptr;
+  }
+  page->links.resize(linkCount);
+  for (uint16_t i = 0; i < linkCount; i++) {
+    auto& link = page->links[i];
+    if (file.read(link.href, sizeof(link.href)) != sizeof(link.href)) {
+      LOG_ERR("PGE", "Failed to read link %u", i);
+      return nullptr;
+    }
+    link.href[sizeof(link.href) - 1] = '\0';
+    serialization::readPod(file, link.x);
+    serialization::readPod(file, link.y);
+    serialization::readPod(file, link.width);
+    serialization::readPod(file, link.height);
+    if (link.href[0] == '\0' || link.width <= 0 || link.height <= 0) {
+      LOG_ERR("PGE", "Invalid link geometry %u", i);
+      return nullptr;
+    }
   }
 
   return page;

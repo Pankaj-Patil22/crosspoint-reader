@@ -8,58 +8,86 @@ class GfxRenderer;
 namespace LyraMetrics {
 constexpr ThemeMetrics values = {.batteryWidth = 16,
                                  .batteryHeight = 12,
-                                 .topPadding = 5,
-                                 .batteryBarHeight = 40,
+                                 // Shared anchor for every header band, including the cover-grid
+                                 // home's status band; roomy enough that the strip clears the edge.
+                                 .topPadding = 10,
+                                 .batteryBarHeight = 20,
                                  .headerHeight = 84,
                                  .verticalSpacing = 16,
+                                 .previewPadding = 12,
+                                 .previewHeightPercent = 30,
                                  .contentSidePadding = 20,
                                  .listRowHeight = 40,
                                  .listWithSubtitleRowHeight = 60,
+                                 .listRowGap = 0,
+                                 .listRowRadius = 6,
+                                 .listInset = 20,
+                                 .listSidePadding = 8,
+                                 .listSelectionStyle = 1,  // light pill
+                                 .listScrollWidth = 4,
+                                 .listScrollSide = 0,
+                                 .listTitleBold = false,
+                                 .headerSidePadding = 18,
+                                 .headerUnderlineSize = 3,
+                                 .headerTitleAlign = 0,  // left
+                                 .headerBatterySide = 0,
+                                 .headerClockCentered = false,
                                  .menuRowHeight = 64,
                                  .menuSpacing = 8,
                                  .tabSpacing = 8,
-                                 .tabBarHeight = 40,
+                                 .tabBarHeight = 48,
                                  .scrollBarWidth = 4,
                                  .scrollBarRightOffset = 5,
                                  .homeTopPadding = 56,
                                  .homeCoverHeight = 226,
                                  .homeCoverTileHeight = 242,
                                  .homeRecentBooksCount = 1,
+                                 .homeContinueReadingInMenu = false,
+                                 .homeMenuTopOffset = 16,
                                  .buttonHintsHeight = 40,
                                  .sideButtonHintsWidth = 30,
                                  .progressBarHeight = 16,
                                  .progressBarMarginTop = 1,
                                  .statusBarHorizontalMargin = 5,
                                  .statusBarVerticalMargin = 19,
-                                 .keyboardKeyWidth = 31,
-                                 .keyboardKeyHeight = 40,
+                                 .keyboardKeyHeight = 48,
                                  .keyboardKeySpacing = 0,
-                                 .keyboardBottomKeyHeight = 35,
-                                 .keyboardBottomKeySpacing = 5,
-                                 .keyboardBottomAligned = true,
                                  .keyboardCenteredText = false,
                                  .keyboardVerticalOffset = -7,
                                  .keyboardTextFieldWidthPercent = 85,
-                                 .keyboardWidthPercent = 90,
-                                 .keyboardKeyCornerRadius = 6};
-}
+                                 .keyboardWidthPercent = 94,
+                                 .popupTopOffsetRatio = 0.165f,
+                                 .popupMarginX = 16,
+                                 .popupMarginY = 12,
+                                 .popupFrameThickness = 2,
+                                 .popupCornerRadius = 6,
+                                 .popupTextBold = false,
+                                 .popupTextInverted = false,
+                                 .popupTextBaselineOffsetY = -2,
+                                 .popupProgressBarHeight = 4,
+                                 .popupProgressDrawOutline = false,
+                                 .popupProgressClampPercent = false,
+                                 .popupProgressFillInverted = false,
+                                 .popupProgressOutlineInverted = false,
+                                 .optionPopupItemSpacing = 8,
+                                 .optionPopupInnerPadding = 20,
+                                 .optionPopupSelectionVPadding = 12,
+                                 .optionPopupDialogSideMargin = 20,
+                                 .textFieldHorizontalPadding = 6,
+                                 .textFieldNormalThickness = 1,
+                                 .textFieldCursorThickness = 3,
+                                 .textFieldLineEndOffset = 0,
+                                 .controlRadius = 6,
+                                 .sheetRadius = 6,
+                                 .capsuleRadius = 6};
+}  // namespace LyraMetrics
 
 class LyraTheme : public BaseTheme {
  public:
   // Component drawing methods
-  //   void drawProgressBar(const GfxRenderer& renderer, Rect rect, size_t current, size_t total) override;
-  void drawBatteryLeft(const GfxRenderer& renderer, Rect rect, bool showPercentage = true) const override;
-  void drawBatteryRight(const GfxRenderer& renderer, Rect rect, bool showPercentage = true) const override;
-  void drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle) const override;
+  void fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const override;
   void drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label,
                      const char* rightLabel = nullptr) const override;
-  void drawTabBar(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs,
-                  bool selected) const override;
-  void drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
-                const std::function<std::string(int index)>& rowTitle,
-                const std::function<std::string(int index)>& rowSubtitle,
-                const std::function<UIIcon(int index)>& rowIcon, const std::function<std::string(int index)>& rowValue,
-                bool highlightValue) const override;
   void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                        const char* btn4) const override;
   void drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const override;
@@ -70,7 +98,5 @@ class LyraTheme : public BaseTheme {
                            const int selectorIndex, bool& coverRendered, bool& coverBufferStored, bool& bufferRestored,
                            std::function<bool()> storeCoverBuffer) const override;
   void drawEmptyRecents(const GfxRenderer& renderer, const Rect rect) const;
-  Rect drawPopup(const GfxRenderer& renderer, const char* message) const override;
-  void fillPopupProgress(const GfxRenderer& renderer, const Rect& layout, const int progress) const override;
   bool showsFileIcons() const override { return true; }
 };

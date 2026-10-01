@@ -1,18 +1,21 @@
-import sys
 import os
-from PIL import Image
-import cairosvg
 import io
+import sys
 
 threshold = 128
+USAGE = 'Usage: python scripts/convert_icon.py input.png|input.svg output_name width height'
 
 def svg_to_png_bytes(svg_path, width, height):
+    import cairosvg
+
     with open(svg_path, 'rb') as f:
         svg_data = f.read()
     png_bytes = cairosvg.svg2png(bytestring=svg_data, output_width=width, output_height=height)
     return png_bytes
 
 def load_image(path, width, height):
+    from PIL import Image
+
     ext = os.path.splitext(path)[1].lower()
     if ext == '.svg':
         png_bytes = svg_to_png_bytes(path, width, height)
@@ -47,7 +50,7 @@ def image_to_c_array(img, array_name):
                     byte |= (bit << (7 - b))
             packed.append(byte)
     # Format as C array
-    c = f'#pragma once\n#include <cstdint>\n\n'
+    c = '#pragma once\n#include <cstdint>\n\n'
     c += f'// size: {width}x{height}\n'
     c += f'static const uint8_t {array_name}[] = {{\n    '
     for i, v in enumerate(packed):
@@ -58,8 +61,11 @@ def image_to_c_array(img, array_name):
     return c
 
 def main():
-    if len(sys.argv) < 5:
-        print('Usage: python convert_image.py input.png output_name width height')
+    if any(arg in ('-h', '--help') for arg in sys.argv[1:]):
+        print(USAGE)
+        sys.exit(0)
+    if len(sys.argv) != 5:
+        print(USAGE)
         sys.exit(1)
     input_path, output_name, width, height = sys.argv[1:5]
     array_name = output_name.capitalize() + 'Icon'

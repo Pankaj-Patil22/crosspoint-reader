@@ -1,5 +1,7 @@
 #include "Bitmap.h"
 
+#include <Logging.h>
+
 #include <cstdlib>
 #include <cstring>
 
@@ -21,7 +23,7 @@ Bitmap::~Bitmap() {
   delete fsDitherer;
 }
 
-uint16_t Bitmap::readLE16(FsFile& f) {
+uint16_t Bitmap::readLE16(HalFile& f) {
   const int c0 = f.read();
   const int c1 = f.read();
   const auto b0 = static_cast<uint8_t>(c0 < 0 ? 0 : c0);
@@ -29,7 +31,7 @@ uint16_t Bitmap::readLE16(FsFile& f) {
   return static_cast<uint16_t>(b0) | (static_cast<uint16_t>(b1) << 8);
 }
 
-uint32_t Bitmap::readLE32(FsFile& f) {
+uint32_t Bitmap::readLE32(HalFile& f) {
   const int c0 = f.read();
   const int c1 = f.read();
   const int c2 = f.read();
@@ -76,6 +78,8 @@ const char* Bitmap::errorToString(BmpReaderError err) {
 
     case BmpReaderError::OomRowBuffer:
       return "OomRowBuffer";
+    case BmpReaderError::OomDitherer:
+      return "OomDitherer";
     case BmpReaderError::ShortReadRow:
       return "ShortReadRow";
   }
@@ -168,9 +172,21 @@ BmpReaderError Bitmap::parseHeaders() {
   const bool highColor = !nativePalette;
   if (highColor && dithering) {
     if (USE_ATKINSON) {
-      atkinsonDitherer = new AtkinsonDitherer(width);
+      atkinsonDitherer = new (std::nothrow) AtkinsonDitherer(width, originalThresholds);
+      if (!atkinsonDitherer || !atkinsonDitherer->isValid()) {
+        delete atkinsonDitherer;
+        atkinsonDitherer = nullptr;
+        LOG_ERR("BMP", "OOM: Atkinson ditherer or row buffers");
+        return BmpReaderError::OomDitherer;
+      }
     } else {
-      fsDitherer = new FloydSteinbergDitherer(width);
+      fsDitherer = new (std::nothrow) FloydSteinbergDitherer(width, originalThresholds);
+      if (!fsDitherer || !fsDitherer->isValid()) {
+        delete fsDitherer;
+        fsDitherer = nullptr;
+        LOG_ERR("BMP", "OOM: Floyd-Steinberg ditherer or row buffers");
+        return BmpReaderError::OomDitherer;
+      }
     }
   }
 

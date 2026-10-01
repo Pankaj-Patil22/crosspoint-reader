@@ -1,12 +1,16 @@
 #!python3
-import freetype
 import zlib
 import sys
 import re
 import math
 import argparse
 from collections import namedtuple
-from fontTools.ttLib import TTFont
+
+# Force UTF-8 stdout so that `python fontconvert.py … > foo.h` on Windows
+# (default cp1252) doesn't emit UTF-16 LE / replacement chars in the generated
+# header. Wrapped in a hasattr guard so it's a no-op on older Pythons.
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 
 # Originally from https://github.com/vroland/epdiy
 
@@ -17,9 +21,13 @@ parser.add_argument("fontstack", action="store", nargs='+', help="list of font f
 parser.add_argument("--2bit", dest="is2Bit", action="store_true", help="generate 2-bit greyscale bitmap instead of 1-bit black and white.")
 parser.add_argument("--additional-intervals", dest="additional_intervals", action="append", help="Additional code point intervals to export as min,max. This argument can be repeated.")
 parser.add_argument("--compress", dest="compress", action="store_true", help="Compress glyph bitmaps using DEFLATE with group-based compression.")
+parser.add_argument("--zopfli", dest="zopfli", action="store_true", help="Use Zopfli for the DEFLATE backend instead of zlib. Produces standard raw-DEFLATE streams (decoded unchanged by the on-device uzlib inflater), typically a few percent smaller than zlib -9, at the cost of much slower compression. Requires --compress and the 'zopfli' package.")
 parser.add_argument("--force-autohint", dest="force_autohint", action="store_true", help="Force FreeType auto-hinter instead of native font hinting. Improves stem width consistency for fonts with weak or no native TrueType hints.")
 parser.add_argument("--pnum", dest="pnum", action="store_true", help="Use proportional numerals (pnum OpenType feature) instead of default tabular figures. Reduces visual gaps between digits in running prose.")
 args = parser.parse_args()
+
+import freetype
+from fontTools.ttLib import TTFont
 
 GlyphProps = namedtuple("GlyphProps", ["width", "height", "advance_x", "left", "top", "data_length", "data_offset", "code_point"])
 
@@ -165,6 +173,30 @@ def fp4_from_design_units(du, scale):
     raw = round(du * scale * 16)
     return max(-128, min(127, raw))
 
+def deflate_raw(data):
+    """Raw-DEFLATE compress `data` (no zlib/gzip wrapper), decodable on-device by uzlib via
+    inflate(wbits=-15). Uses Zopfli when --zopfli is set, else zlib -9.
+
+    Zopfli is a drop-in stronger DEFLATE encoder: the output is an ordinary DEFLATE stream, so
+    nothing on the device changes -- the same inflater decodes it at the same speed. It is only
+    much slower to compress, which is free here because this runs at font-generation time.
+
+    Zopfli's Python binding emits zlib-wrapped output, so strip the 2-byte header and 4-byte
+    adler32 trailer to recover the raw block. The round-trip check guards that wrapper format --
+    raised rather than asserted, because `python -O` strips asserts and this one decides whether
+    the font data we emit is decodable at all.
+    """
+    if args.zopfli:
+        import zopfli.zlib
+        wrapped = zopfli.zlib.compress(bytes(data))
+        raw = wrapped[2:-4]
+        if zlib.decompress(raw, -15) != bytes(data):
+            raise RuntimeError("zopfli raw-DEFLATE round-trip failed; refusing to emit undecodable font data")
+        return raw
+    compressor = zlib.compressobj(level=9, wbits=-15)
+    return compressor.compress(bytes(data)) + compressor.flush()
+
+
 def chunks(l, n):
     for i in range(0, len(l), n):
         yield l[i:i + n]
@@ -241,7 +273,7 @@ unmerged_intervals = sorted(intervals + add_ints)
 intervals = []
 unvalidated_intervals = []
 for i_start, i_end in unmerged_intervals:
-    if len(unvalidated_intervals) > 0 and i_start + 1 <= unvalidated_intervals[-1][1]:
+    if len(unvalidated_intervals) > 0 and i_start <= unvalidated_intervals[-1][1] + 1:
         unvalidated_intervals[-1] = (unvalidated_intervals[-1][0], max(unvalidated_intervals[-1][1], i_end))
         continue
     unvalidated_intervals.append((i_start, i_end))
@@ -310,16 +342,6 @@ for i_start, i_end in intervals:
             if (bitmap.width * bitmap.rows) % 4 != 0:
                 px = px << (4 - (bitmap.width * bitmap.rows) % 4) * 2
                 pixels2b.append(px)
-
-            # for y in range(bitmap.rows):
-            #     line = ''
-            #     for x in range(bitmap.width):
-            #         pixelPosition = y * bitmap.width + x
-            #         byte = pixels2b[pixelPosition // 4]
-            #         bit_index = (3 - (pixelPosition % 4)) * 2
-            #         line += '#' if ((byte >> bit_index) & 3) > 0 else '.'
-            #     print(line)
-            # print('')
         else:
             # Downsample to 1-bit bitmap - treat any 2+ as black
             pixelsbw = []
@@ -337,16 +359,6 @@ for i_start, i_end in intervals:
             if (bitmap.width * bitmap.rows) % 8 != 0:
                 px = px << (8 - (bitmap.width * bitmap.rows) % 8)
                 pixelsbw.append(px)
-
-            # for y in range(bitmap.rows):
-            #     line = ''
-            #     for x in range(bitmap.width):
-            #         pixelPosition = y * bitmap.width + x
-            #         byte = pixelsbw[pixelPosition // 8]
-            #         bit_index = 7 - (pixelPosition % 8)
-            #         line += '#' if (byte >> bit_index) & 1 else '.'
-            #     print(line)
-            # print('')
 
         pixels = pixels2b if is2Bit else pixelsbw
 
@@ -630,7 +642,7 @@ def extract_ligatures_fonttools(font_path, codepoints):
         # Find lookup indices for ligature features.
         # Currently extracts 'liga' (standard) and 'rlig' (required) only.
         # To also extract discretionary or historical ligatures, add:
-        #   'dlig' - Discretionary Ligatures (e.g., ft, st in Bookerly)
+        #   'dlig' - Discretionary Ligatures (e.g., ft, st in Noto)
         #   'hlig' - Historical Ligatures (e.g., long-s+t in OpenDyslexic)
         # These are off by default in standard text renderers.
         LIGATURE_FEATURES = ('liga', 'rlig')
@@ -792,6 +804,15 @@ if compress:
     # are grouped together for efficient LRU caching on the embedded target.
     # Since glyphs are in codepoint order, glyphs in the same Unicode block
     # are contiguous in the array and form natural groups.
+    #
+    # On top of script boundaries, a hard size cap (GROUP_MAX_UNCOMPRESSED_BYTES)
+    # is applied: if adding the next glyph would push the uncompressed group
+    # size over the cap, the group is closed and a new one started with the
+    # same script ID. This bounds the embedded decompressor's transient
+    # malloc regardless of font density (CJK, Vietnamese, user-supplied
+    # fonts with large Unicode blocks). Without it, a single dense script
+    # group can balloon past what fits in a transient page-decompress
+    # allocation on the device.
     SCRIPT_GROUP_RANGES = [
         (0x0000, 0x007F),   # ASCII
         (0x0080, 0x00FF),   # Latin-1 Supplement
@@ -809,6 +830,11 @@ if compress:
         (0xFFFD, 0xFFFD),   # Replacement Character
     ]
 
+    # 64 KB cap: large enough to hold any single built-in script group with
+    # headroom, small enough to be a comfortable transient malloc on the
+    # ESP32-C3.
+    GROUP_MAX_UNCOMPRESSED_BYTES = 65536
+
     def get_script_group(code_point):
         for i, (start, end) in enumerate(SCRIPT_GROUP_RANGES):
             if start <= code_point <= end:
@@ -819,17 +845,34 @@ if compress:
     current_group_id = None
     group_start = 0
     group_count = 0
+    group_uncompressed = 0
 
-    for i, (props, packed) in enumerate(all_glyphs):
+    for i, (props, _) in enumerate(all_glyphs):
         sg = get_script_group(props.code_point)
-        if sg != current_group_id:
+        # Use the byte-aligned size (4-pixel-aligned row stride) rather than
+        # the packed length, since the decompressor consumes byte-aligned
+        # buffers. Empty glyphs contribute zero.
+        glyph_aligned_size = (((props.width + 3) // 4) * props.height
+                              if props.width > 0 and props.height > 0 else 0)
+        if glyph_aligned_size > GROUP_MAX_UNCOMPRESSED_BYTES:
+            raise ValueError(
+                f"Glyph {i} (code point U+{props.code_point:04X}) byte-aligned size "
+                f"{glyph_aligned_size} exceeds GROUP_MAX_UNCOMPRESSED_BYTES="
+                f"{GROUP_MAX_UNCOMPRESSED_BYTES}. Consider: (1) increasing GROUP_MAX_UNCOMPRESSED_BYTES, "
+                f"(2) reducing font size, or (3) excluding this codepoint."  
+            )
+        size_overflow = group_uncompressed + glyph_aligned_size > GROUP_MAX_UNCOMPRESSED_BYTES
+
+        if sg != current_group_id or size_overflow:
             if group_count > 0:
                 groups.append((group_start, group_count))
             current_group_id = sg
             group_start = i
             group_count = 1
+            group_uncompressed = glyph_aligned_size
         else:
             group_count += 1
+            group_uncompressed += glyph_aligned_size
 
     if group_count > 0:
         groups.append((group_start, group_count))
@@ -865,8 +908,7 @@ if compress:
             group_aligned.extend(to_byte_aligned(packed, old_props.width, old_props.height))
 
         # Compress byte-aligned data with raw DEFLATE (no zlib/gzip header)
-        compressor = zlib.compressobj(level=9, wbits=-15)
-        compressed = compressor.compress(bytes(group_aligned)) + compressor.flush()
+        compressed = deflate_raw(group_aligned)
 
         compressed_groups.append((compressed, len(group_aligned), count, first_idx))
         compressed_bitmap_data.extend(compressed)
@@ -925,21 +967,62 @@ if compress:
     print("};\n")
 
 if kern_map:
-    print(f"static const EpdKernClassEntry {font_name}KernLeftClasses[] = {{")
-    for cp, cls in kern_left_classes:
-        print(f"    {{ 0x{cp:04X}, {cls} }}, // {cp_label(cp)}")
-    print("};\n")
+    # Split class maps: codepoints in one array, class IDs in a parallel one. Same 3 bytes per
+    # entry as the packed EpdKernClassEntry, but the binary search only reads codepoints, so
+    # keeping the payload out of the searched array shrinks its footprint by a third and makes
+    # every read naturally aligned. Measured -13 to -14% on the class lookup, which is ~96% of
+    # getKerning(). SD-card fonts keep the packed form because .cpfont maps it in place.
+    for side, entries in (("Left", kern_left_classes), ("Right", kern_right_classes)):
+        print(f"static const uint16_t {font_name}Kern{side}Codepoints[] = {{")
+        for chunk in chunks([cp for cp, _ in entries], 12):
+            print("    " + ", ".join(f"0x{cp:04X}" for cp in chunk) + ",")
+        print("};\n")
+        print(f"static const uint8_t {font_name}Kern{side}ClassIds[] = {{")
+        for chunk in chunks([cls for _, cls in entries], 16):
+            print("    " + ", ".join(f"{cls:3d}" for cls in chunk) + ",")
+        print("};\n")
 
-    print(f"static const EpdKernClassEntry {font_name}KernRightClasses[] = {{")
-    for cp, cls in kern_right_classes:
-        print(f"    {{ 0x{cp:04X}, {cls} }}, // {cp_label(cp)}")
-    print("};\n")
-
-    print(f"static const int8_t {font_name}KernMatrix[] = {{")
+    # Sparse (CSR) kerning. The dense leftClass x rightClass matrix is overwhelmingly zero --
+    # measured 86.6% across the built-in set -- so storing only the non-zero entries is roughly a
+    # quarter of the size. Values are unchanged, so nothing repaginates. SD-card fonts still emit
+    # the dense matrix (fontconvert_sdcard.py): .cpfont maps it in place.
+    row_offsets = []
+    sparse_cols = []
+    sparse_vals = []
     for row in range(kern_left_class_count):
+        row_offsets.append(len(sparse_cols))
         row_start = row * kern_right_class_count
         row_vals = kern_matrix[row_start:row_start + kern_right_class_count]
-        print("    " + ", ".join(f"{v:4d}" for v in row_vals) + ",")
+        for col, v in enumerate(row_vals):
+            if v != 0:
+                sparse_cols.append(col)
+                sparse_vals.append(v)
+    row_offsets.append(len(sparse_cols))
+    if len(sparse_cols) > 0xFFFF:
+        print(f"Error: {len(sparse_cols)} kern entries exceed the uint16 row-offset range", file=sys.stderr)
+        sys.exit(1)
+    if kern_right_class_count > 256:
+        print(f"Error: {kern_right_class_count} right classes exceed the uint8 column range", file=sys.stderr)
+        sys.exit(1)
+    dense_bytes = kern_left_class_count * kern_right_class_count
+    sparse_bytes = len(row_offsets) * 2 + len(sparse_cols) * 2
+    print(f"// Kerning: {len(sparse_cols)} of {dense_bytes} entries non-zero "
+          f"({100.0 * len(sparse_cols) / dense_bytes:.1f}%), {dense_bytes} -> {sparse_bytes} bytes",
+          file=sys.stderr)
+
+    print(f"static const uint16_t {font_name}KernRowOffsets[] = {{")
+    for chunk in chunks(row_offsets, 16):
+        print("    " + ", ".join(f"{v:5d}" for v in chunk) + ",")
+    print("};\n")
+
+    print(f"static const uint8_t {font_name}KernSparseCols[] = {{")
+    for chunk in chunks(sparse_cols, 16):
+        print("    " + ", ".join(f"{v:3d}" for v in chunk) + ",")
+    print("};\n")
+
+    print(f"static const int8_t {font_name}KernSparseValues[] = {{")
+    for chunk in chunks(sparse_vals, 16):
+        print("    " + ", ".join(f"{v:4d}" for v in chunk) + ",")
     print("};\n")
 
 if ligature_pairs:
@@ -966,17 +1049,23 @@ else:
 # glyphToGroup (not used for script-grouped fonts)
 print("    nullptr,")
 if kern_map:
-    print(f"    {font_name}KernLeftClasses,")
-    print(f"    {font_name}KernRightClasses,")
-    print(f"    {font_name}KernMatrix,")
+    print("    nullptr,  // kernLeftClasses: built-in fonts use the split arrays below")
+    print("    nullptr,  // kernRightClasses")
+    print(f"    {font_name}KernLeftCodepoints,")
+    print(f"    {font_name}KernLeftClassIds,")
+    print(f"    {font_name}KernRightCodepoints,")
+    print(f"    {font_name}KernRightClassIds,")
+    print("    nullptr,  // kernMatrix: built-in fonts use the sparse form below")
+    print(f"    {font_name}KernRowOffsets,")
+    print(f"    {font_name}KernSparseCols,")
+    print(f"    {font_name}KernSparseValues,")
     print(f"    {len(kern_left_classes)},")
     print(f"    {len(kern_right_classes)},")
     print(f"    {kern_left_class_count},")
     print(f"    {kern_right_class_count},")
 else:
-    print(f"    nullptr,")
-    print(f"    nullptr,")
-    print(f"    nullptr,")
+    for _ in range(10):
+        print("    nullptr,")
     print(f"    0,")
     print(f"    0,")
     print(f"    0,")
