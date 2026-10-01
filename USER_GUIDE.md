@@ -298,6 +298,8 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Images**: Whether to display embedded images (JPG/PNG) found in EPUB files; options are "ON" (default) or "OFF".
 
+- **Pause Auto Turn When Idle**: How long **[Auto Page Turn](#auto-page-turn)** keeps running without any button press before it pauses itself; options are "Off" (never pause), "5 min", "10 min" (default), "15 min", "30 min" or "60 min".
+
 - **Focus Reading**: Bolds the first part of each word to create visual fixation points, similar to Bionic Reading. This can help improve reading speed and focus; options are "ON" or "OFF" (default).
 
 #### 3.6.3 Controls
@@ -634,7 +636,7 @@ While Smart mode is running, **hold Next Page** to speed the learned speed up by
 
 The picker opens on the mode you used last, so switching auto page turn back on takes one press.
 
-Auto page turn keeps the device awake while it runs. If 10 pages turn without any button press, it pauses on its own so an unattended device doesn't read on through the book, and the normal sleep timer takes over.
+Auto page turn keeps the device awake while it runs. So an unattended device doesn't read on through the book, it pauses on its own after a stretch with no button press, and the normal sleep timer takes over. Set how long with **Settings → Reader → Pause Auto Turn When Idle** (5, 10, 15, 30 or 60 minutes; default 10), or choose **Off** to let it run until the end of the book.
 
 **Pausing:** when **Short Power Button Click** in **[Controls Settings](#363-controls)** is set to "Ignore" (the default), a short press of the power button pauses auto page turn and the status bar shows `Auto Turn Paused`. Press it again to resume with a fresh timer. Pressing **Confirm** or **Back** still turns auto page turn off.
 

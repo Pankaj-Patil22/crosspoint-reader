@@ -527,7 +527,7 @@ void EpubReaderActivity::loop() {
         mappedInput.wasReleased(MappedInputManager::Button::Power) &&
         !mappedInput.wasReleased(MappedInputManager::Button::Down)) {
       automaticPageTurnPaused = !automaticPageTurnPaused;
-      unattendedAutoTurns = 0;
+      lastAutoTurnInputMs = millis();
       lastPageTurnTime = millis();
       requestUpdate();
       return;
@@ -543,17 +543,21 @@ void EpubReaderActivity::loop() {
       return;
     }
 
+    // Nobody has touched the device for the configured time: stop rather than run on through the book.
+    const unsigned long idleStopMs = autoTurnIdleStopMs();
+    if (!automaticPageTurnPaused && idleStopMs > 0 && millis() - lastAutoTurnInputMs >= idleStopMs) {
+      automaticPageTurnPaused = true;
+      LOG_DBG("ERS", "Auto turn paused after %lu ms without input", idleStopMs);
+      requestUpdate();
+      return;
+    }
+
     if (automaticPageTurnPaused) {
       lastPageTurnTime = millis();
     } else if (skipForwardAdaptCount == 0 && (millis() - lastPageTurnTime) >= pageTurnDuration) {
       backwardSlowdownApplied = false;
       lastForwardWasAccidental = false;
       pageTurn(true);
-      // Nobody is pressing anything: stop here rather than run on through the book.
-      if (++unattendedAutoTurns >= AUTO_TURN_UNATTENDED_PAGE_LIMIT) {
-        automaticPageTurnPaused = true;
-        LOG_DBG("ERS", "Auto turn paused after %u unattended pages", unattendedAutoTurns);
-      }
       requestUpdate();
       return;
     }
@@ -1088,7 +1092,7 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
 
   lastPageTurnTime = millis();
   activePageTurnOption = selectedPageTurnOption;
-  unattendedAutoTurns = 0;
+  lastAutoTurnInputMs = millis();
   if (SETTINGS.lastAutoTurnOption != selectedPageTurnOption) {
     SETTINGS.lastAutoTurnOption = selectedPageTurnOption;
     SETTINGS.saveToFile();
@@ -2859,7 +2863,7 @@ unsigned long EpubReaderActivity::smartPageDurationMs(const uint16_t wordCount, 
 }
 
 void EpubReaderActivity::manualPageTurn(const bool isForwardTurn) {
-  unattendedAutoTurns = 0;
+  lastAutoTurnInputMs = millis();
   // Feed the learned speed before turning so the next page's duration uses the updated value.
   if (smartPageTurnActive() && !automaticPageTurnPaused) {
     adaptReadingSpeed(isForwardTurn, millis() - lastPageTurnTime);
@@ -2945,7 +2949,7 @@ void EpubReaderActivity::nudgeReadingSpeed(const bool faster) {
   SETTINGS.readingSpeedWpm =
       static_cast<uint16_t>(std::clamp<uint32_t>(scaled, WPM_ADAPT_MIN, CrossPointSettings::READING_SPEED_WPM_MAX));
   dirtyReadingSpeedWpm = true;
-  unattendedAutoTurns = 0;
+  lastAutoTurnInputMs = millis();
   pageTurnDuration = smartPageDurationMs(currentPageWordCount > 0 ? currentPageWordCount : FALLBACK_PAGE_WORDS,
                                          SETTINGS.readingSpeedWpm);
   LOG_DBG("ERS", "Reading speed nudged %s to %u wpm", faster ? "up" : "down", SETTINGS.readingSpeedWpm);
@@ -2956,6 +2960,14 @@ int EpubReaderActivity::chapterMinutesLeft() const {
   const int pagesAfter = std::max(0, static_cast<int>(section->estimatedTotalPages()) - section->currentPage - 1);
   const uint32_t wordsLeft = currentPageWordCount + static_cast<uint32_t>(pagesAfter) * averagePageWords;
   return static_cast<int>((wordsLeft + SETTINGS.readingSpeedWpm - 1) / SETTINGS.readingSpeedWpm);
+}
+
+unsigned long EpubReaderActivity::autoTurnIdleStopMs() {
+  static constexpr uint8_t IDLE_STOP_MINUTES[] = {0, 5, 10, 15, 30, 60};
+  static_assert(std::size(IDLE_STOP_MINUTES) == CrossPointSettings::IDLE_STOP_60 + 1,
+                "IDLE_STOP_MINUTES must cover every AUTO_TURN_IDLE_STOP value");
+  const uint8_t index = SETTINGS.autoTurnIdleStop < std::size(IDLE_STOP_MINUTES) ? SETTINGS.autoTurnIdleStop : 0;
+  return static_cast<unsigned long>(IDLE_STOP_MINUTES[index]) * 60UL * 1000UL;
 }
 
 int EpubReaderActivity::autoTurnPickerIndex() const {

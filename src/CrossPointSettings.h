@@ -381,6 +381,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   static constexpr uint8_t AUTO_TURN_OPTION_COUNT = 6;
   // Auto page-turn option last switched on, pre-selected when the picker opens (0 = none yet).
   uint8_t lastAutoTurnOption = 0;
+  // Pause auto page turn after this long without input; values index AUTO_TURN_IDLE_STOP_MINUTES (0 = never).
+  enum AUTO_TURN_IDLE_STOP { IDLE_STOP_OFF = 0, IDLE_STOP_5, IDLE_STOP_10, IDLE_STOP_15, IDLE_STOP_30, IDLE_STOP_60 };
+  uint8_t autoTurnIdleStop = IDLE_STOP_10;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
 

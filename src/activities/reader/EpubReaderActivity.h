@@ -61,9 +61,8 @@ class EpubReaderActivity final : public ReaderActivity {
   uint16_t currentPageWordCount = 0;
   // Running average of words per text page, used to estimate reading time left.
   uint16_t averagePageWords = 0;
-  // Auto turns since the last input; auto turn pauses at the limit so an unattended reader stops.
-  static constexpr uint8_t AUTO_TURN_UNATTENDED_PAGE_LIMIT = 10;
-  uint8_t unattendedAutoTurns = 0;
+  // Last reader input while auto turn runs; SETTINGS.autoTurnIdleStop pauses it after that long.
+  unsigned long lastAutoTurnInputMs = 0UL;
   // Running auto turn reports activity this often, under the shortest (1 min) sleep timeout.
   static constexpr unsigned long AUTO_TURN_AWAKE_PULSE_MS = 30000UL;
   unsigned long lastAwakePulseMs = 0UL;
@@ -208,6 +207,8 @@ class EpubReaderActivity final : public ReaderActivity {
   int chapterMinutesLeft() const;
   // Option the auto page-turn picker opens on: the running one, else the last one used.
   int autoTurnPickerIndex() const;
+  // SETTINGS.autoTurnIdleStop in milliseconds, 0 when auto turn never pauses itself.
+  static unsigned long autoTurnIdleStopMs();
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();
