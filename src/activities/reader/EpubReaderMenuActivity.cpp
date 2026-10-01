@@ -16,13 +16,15 @@ namespace fui = freeink::ui;
 EpubReaderMenuActivity::EpubReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                                const std::string& title, const int currentPage, const int totalPages,
                                                const int bookProgressPercent, const uint8_t currentOrientation,
-                                               const bool hasFootnotes, const bool hasBookmarks)
+                                               const bool hasFootnotes, const bool hasBookmarks,
+                                               const int chapterMinutesLeft)
     : UiListActivity("EpubReaderMenu", renderer, mappedInput),
       title(title),
       pendingOrientation(currentOrientation),
       currentPage(currentPage),
       totalPages(totalPages),
-      bookProgressPercent(bookProgressPercent) {
+      bookProgressPercent(bookProgressPercent),
+      chapterMinutesLeft(chapterMinutesLeft) {
   buildMenuItems(menuItems, hasFootnotes, hasBookmarks);
   buildMenuRowItems();
 }
@@ -104,11 +106,12 @@ void EpubReaderMenuActivity::activateIndex(const int index) {
   }
 
   if (selectedAction == MenuAction::AUTO_PAGE_TURN) {
-    optionPopup.show(I18N.get(StrId::STR_AUTO_TURN_PAGES_PER_MIN), pageTurnLabels.data(),
-                     static_cast<int>(pageTurnLabels.size()), selectedPageTurnOption, [this](int idx) {
-                       selectedPageTurnOption = idx;
-                       requestUpdate();
-                     });
+    optionPopup.show(
+        I18N.get(StrId::STR_AUTO_TURN_PAGES_PER_MIN), pageTurnLabels.data(), static_cast<int>(pageTurnLabels.size()),
+        selectedPageTurnOption != 0 ? selectedPageTurnOption : SETTINGS.lastAutoTurnOption, [this](int idx) {
+          selectedPageTurnOption = idx;
+          requestUpdate();
+        });
     requestUpdate();
     return;
   }
@@ -167,6 +170,12 @@ void EpubReaderMenuActivity::buildScreen(UiScreen& screen) {
                    std::to_string(totalPages) + std::string(tr(STR_PAGES_SEPARATOR));
   }
   progressLine += std::string(tr(STR_BOOK_PREFIX)) + std::to_string(bookProgressPercent) + "%";
+  if (chapterMinutesLeft > 0) {
+    char minutesLeft[40];
+    snprintf(minutesLeft, sizeof(minutesLeft), tr(STR_MINUTES_LEFT), chapterMinutesLeft);
+    progressLine += "  |  ";
+    progressLine += minutesLeft;
+  }
   const fui::Rect band = screen.takeTop(static_cast<int16_t>(metrics.tabBarHeight));
   const int16_t pad = screen.theme().headerSidePadding;
   screen.target().text(band.inset(fui::Insets{0, pad, 0, pad}), progressLine.c_str(), screen.theme().smallText);

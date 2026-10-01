@@ -43,7 +43,8 @@ class EpubReaderMenuActivity final : public UiListActivity {
 
   explicit EpubReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& title,
                                   const int currentPage, const int totalPages, const int bookProgressPercent,
-                                  const uint8_t currentOrientation, const bool hasFootnotes, bool hasBookmarks);
+                                  const uint8_t currentOrientation, const bool hasFootnotes, bool hasBookmarks,
+                                  int chapterMinutesLeft = -1);
 
   void render(RenderLock&&) override;
   bool handleHomeGesture() override;
@@ -86,4 +87,5 @@ class EpubReaderMenuActivity final : public UiListActivity {
   int currentPage = 0;
   int totalPages = 0;
   int bookProgressPercent = 0;
+  int chapterMinutesLeft = -1;  // estimated reading time left in the chapter, -1 when unknown
 };

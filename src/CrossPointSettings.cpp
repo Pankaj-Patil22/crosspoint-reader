@@ -115,6 +115,10 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   if (readingSpeedWpm != 0) {
     doc["readingSpeedWpm"] = readingSpeedWpm;
   }
+  // Reader-menu state rather than a user-facing setting, so it stays out of SettingsList.
+  if (lastAutoTurnOption != 0) {
+    doc["lastAutoTurnOption"] = lastAutoTurnOption;
+  }
 }
 
 bool CrossPointSettings::fromJson(JsonVariantConst doc) {
@@ -269,6 +273,8 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     readingSpeedWpm = std::min(rawWpm, READING_SPEED_WPM_MAX);
     if (readingSpeedWpm != rawWpm) needsResave = true;
   }
+
+  lastAutoTurnOption = clamp(doc["lastAutoTurnOption"] | (uint8_t)0, AUTO_TURN_OPTION_COUNT, 0);
 
   if (needsResave) {
     LOG_DBG("CPS", "Resaving settings to update format");

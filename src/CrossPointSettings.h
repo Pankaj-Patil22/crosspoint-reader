@@ -377,6 +377,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   static constexpr uint16_t READING_SPEED_WPM_MAX = 1000;
   // Learned reading speed in words per minute for Smart auto page turn (0 = uncalibrated).
   uint16_t readingSpeedWpm = 0;
+  // Number of auto page-turn options in the reader menu (Off, Smart and the fixed rates).
+  static constexpr uint8_t AUTO_TURN_OPTION_COUNT = 6;
+  // Auto page-turn option last switched on, pre-selected when the picker opens (0 = none yet).
+  uint8_t lastAutoTurnOption = 0;
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
 

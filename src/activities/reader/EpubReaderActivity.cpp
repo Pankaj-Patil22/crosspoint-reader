@@ -59,6 +59,8 @@ bool xteinkClassPanel() { return gpio.isXteinkDevice() || BoardConfig::isX4Pro()
 constexpr int PAGE_TURN_RATES[] = {1, 0, 1, 3, 6, 12};
 static_assert(EpubReaderMenuActivity::SMART_PAGE_TURN_OPTION == 1 && PAGE_TURN_RATES[1] == 0,
               "PAGE_TURN_RATES must keep the Smart entry at SMART_PAGE_TURN_OPTION");
+static_assert(std::size(PAGE_TURN_RATES) == CrossPointSettings::AUTO_TURN_OPTION_COUNT,
+              "AUTO_TURN_OPTION_COUNT must match PAGE_TURN_RATES");
 constexpr size_t initialBookmarkCacheCapacity = 16;
 constexpr float bookmarkProgressEpsilon = 0.0001f;
 
@@ -288,9 +290,9 @@ void EpubReaderActivity::openReaderMenu() {
   const int bookProgressPercent = bookPercentFor(position);
 
   startActivityForResult(
-      std::make_unique<EpubReaderMenuActivity>(renderer, mappedInput, epub->getTitle(), position.displayPage(),
-                                               position.totalPages, bookProgressPercent, SETTINGS.orientation,
-                                               !currentPageFootnotes.empty(), !cachedBookmarks.empty()),
+      std::make_unique<EpubReaderMenuActivity>(
+          renderer, mappedInput, epub->getTitle(), position.displayPage(), position.totalPages, bookProgressPercent,
+          SETTINGS.orientation, !currentPageFootnotes.empty(), !cachedBookmarks.empty(), chapterMinutesLeft()),
       [this](const ActivityResult& result) {
         const auto& menu = std::get<MenuResult>(result.data);
 
@@ -525,6 +527,7 @@ void EpubReaderActivity::loop() {
         mappedInput.wasReleased(MappedInputManager::Button::Power) &&
         !mappedInput.wasReleased(MappedInputManager::Button::Down)) {
       automaticPageTurnPaused = !automaticPageTurnPaused;
+      unattendedAutoTurns = 0;
       lastPageTurnTime = millis();
       requestUpdate();
       return;
@@ -546,6 +549,11 @@ void EpubReaderActivity::loop() {
       backwardSlowdownApplied = false;
       lastForwardWasAccidental = false;
       pageTurn(true);
+      // Nobody is pressing anything: stop here rather than run on through the book.
+      if (++unattendedAutoTurns >= AUTO_TURN_UNATTENDED_PAGE_LIMIT) {
+        automaticPageTurnPaused = true;
+        LOG_DBG("ERS", "Auto turn paused after %u unattended pages", unattendedAutoTurns);
+      }
       requestUpdate();
       return;
     }
@@ -696,6 +704,11 @@ void EpubReaderActivity::loop() {
 
   const unsigned long heldMs = (touch.prev || touch.next) ? touch.heldMs : mappedInput.getHeldTime();
   const bool longPress = !fromTilt && heldMs >= ReaderUtils::SKIP_HOLD_MS;
+  if (longPress && smartPageTurnActive()) {
+    nudgeReadingSpeed(nextTriggered);
+    requestUpdate();
+    return;
+  }
   if (longPress && SETTINGS.longPressButtonBehavior == SETTINGS.CHAPTER_SKIP) {
     skipPages(nextTriggered ? 1 : -1);
     requestUpdate();
@@ -1075,6 +1088,11 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
 
   lastPageTurnTime = millis();
   activePageTurnOption = selectedPageTurnOption;
+  unattendedAutoTurns = 0;
+  if (SETTINGS.lastAutoTurnOption != selectedPageTurnOption) {
+    SETTINGS.lastAutoTurnOption = selectedPageTurnOption;
+    SETTINGS.saveToFile();
+  }
   skipForwardAdaptCount = 0;
   backwardSlowdownApplied = false;
   lastForwardWasAccidental = false;
@@ -1482,6 +1500,11 @@ void EpubReaderActivity::renderBook() {
             std::min<uint32_t>(UINT16_MAX, static_cast<uint32_t>(currentPageWordCount) + block->wordCount()));
       }
     }
+    if (currentPageWordCount > 0) {
+      averagePageWords = averagePageWords == 0
+                             ? currentPageWordCount
+                             : static_cast<uint16_t>((7UL * averagePageWords + currentPageWordCount) / 8UL);
+    }
     if (smartPageTurnActive()) {
       const uint16_t wpm = SETTINGS.readingSpeedWpm > 0 ? SETTINGS.readingSpeedWpm : DEFAULT_WPM;
       pageTurnDuration =
@@ -1873,6 +1896,13 @@ void EpubReaderActivity::renderStatusBar() const {
         title += std::to_string(SETTINGS.readingSpeedWpm) + tr(STR_CALIBRATE_READING_SPEED_WPM);
       } else {
         title += tr(STR_CALIBRATE_UNCALIBRATED);
+      }
+      const int minutesLeft = chapterMinutesLeft();
+      if (minutesLeft > 0) {
+        char minutesText[24];
+        snprintf(minutesText, sizeof(minutesText), tr(STR_MINUTES_LEFT), minutesLeft);
+        title += "  |  ";
+        title += minutesText;
       }
     } else {
       title = tr(STR_AUTO_TURN_ENABLED) + std::to_string(PAGE_TURN_RATES[activePageTurnOption]);
@@ -2517,11 +2547,9 @@ std::string EpubReaderActivity::moreRowValue(int row) const {
     case MA::ROTATE_SCREEN:
       return I18N.get(kOrient[SETTINGS.orientation % CrossPointSettings::ORIENTATION_COUNT]);
     case MA::AUTO_PAGE_TURN:
-      if (autoTurnOption == 0 || autoTurnOption >= static_cast<int>(std::size(PAGE_TURN_RATES))) {
-        return tr(STR_STATE_OFF);
-      }
-      if (autoTurnOption == EpubReaderMenuActivity::SMART_PAGE_TURN_OPTION) return tr(STR_AUTO_TURN_SMART);
-      return std::to_string(PAGE_TURN_RATES[autoTurnOption]);
+      if (!automaticPageTurnActive || activePageTurnOption == 0) return tr(STR_STATE_OFF);
+      if (activePageTurnOption == EpubReaderMenuActivity::SMART_PAGE_TURN_OPTION) return tr(STR_AUTO_TURN_SMART);
+      return std::to_string(PAGE_TURN_RATES[activePageTurnOption]);
     case MA::RESET_READING_SPEED:
       return SETTINGS.readingSpeedWpm > 0
                  ? std::to_string(SETTINGS.readingSpeedWpm) + tr(STR_CALIBRATE_READING_SPEED_WPM)
@@ -2571,10 +2599,8 @@ void EpubReaderActivity::activateMoreRow(int row) {
           labels.push_back(std::to_string(PAGE_TURN_RATES[i]));
         }
       }
-      overlayPopup.show(StrId::STR_AUTO_TURN_PAGES_PER_MIN, labels, autoTurnOption, [this](int idx) {
-        autoTurnOption = idx;
-        toggleAutoPageTurn(static_cast<uint8_t>(idx));
-      });
+      overlayPopup.show(StrId::STR_AUTO_TURN_PAGES_PER_MIN, labels, autoTurnPickerIndex(),
+                        [this](int idx) { toggleAutoPageTurn(static_cast<uint8_t>(idx)); });
       paintOverlayPopup();
       return;
     }
@@ -2833,6 +2859,7 @@ unsigned long EpubReaderActivity::smartPageDurationMs(const uint16_t wordCount, 
 }
 
 void EpubReaderActivity::manualPageTurn(const bool isForwardTurn) {
+  unattendedAutoTurns = 0;
   // Feed the learned speed before turning so the next page's duration uses the updated value.
   if (smartPageTurnActive() && !automaticPageTurnPaused) {
     adaptReadingSpeed(isForwardTurn, millis() - lastPageTurnTime);
@@ -2902,4 +2929,35 @@ void EpubReaderActivity::flushReadingSpeed() {
   } else {
     LOG_ERR("ERS", "Failed to persist reading speed");
   }
+}
+
+bool EpubReaderActivity::preventAutoSleep() {
+  if (!automaticPageTurnActive || automaticPageTurnPaused) return false;
+  const unsigned long now = millis();
+  if (now - lastAwakePulseMs < AUTO_TURN_AWAKE_PULSE_MS) return false;
+  lastAwakePulseMs = now;
+  return true;
+}
+
+void EpubReaderActivity::nudgeReadingSpeed(const bool faster) {
+  const uint32_t current = SETTINGS.readingSpeedWpm > 0 ? SETTINGS.readingSpeedWpm : DEFAULT_WPM;
+  const uint32_t scaled = faster ? current * (100U + NUDGE_PERCENT) / 100U : current * 100U / (100U + NUDGE_PERCENT);
+  SETTINGS.readingSpeedWpm =
+      static_cast<uint16_t>(std::clamp<uint32_t>(scaled, WPM_ADAPT_MIN, CrossPointSettings::READING_SPEED_WPM_MAX));
+  dirtyReadingSpeedWpm = true;
+  unattendedAutoTurns = 0;
+  pageTurnDuration = smartPageDurationMs(currentPageWordCount > 0 ? currentPageWordCount : FALLBACK_PAGE_WORDS,
+                                         SETTINGS.readingSpeedWpm);
+  LOG_DBG("ERS", "Reading speed nudged %s to %u wpm", faster ? "up" : "down", SETTINGS.readingSpeedWpm);
+}
+
+int EpubReaderActivity::chapterMinutesLeft() const {
+  if (!section || SETTINGS.readingSpeedWpm == 0 || averagePageWords == 0) return -1;
+  const int pagesAfter = std::max(0, static_cast<int>(section->estimatedTotalPages()) - section->currentPage - 1);
+  const uint32_t wordsLeft = currentPageWordCount + static_cast<uint32_t>(pagesAfter) * averagePageWords;
+  return static_cast<int>((wordsLeft + SETTINGS.readingSpeedWpm - 1) / SETTINGS.readingSpeedWpm);
+}
+
+int EpubReaderActivity::autoTurnPickerIndex() const {
+  return automaticPageTurnActive ? activePageTurnOption : SETTINGS.lastAutoTurnOption;
 }

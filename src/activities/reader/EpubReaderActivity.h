@@ -59,6 +59,16 @@ class EpubReaderActivity final : public ReaderActivity {
   // The last forward turn was too fast to be real; the next back press undoes it without penalty.
   bool lastForwardWasAccidental = false;
   uint16_t currentPageWordCount = 0;
+  // Running average of words per text page, used to estimate reading time left.
+  uint16_t averagePageWords = 0;
+  // Auto turns since the last input; auto turn pauses at the limit so an unattended reader stops.
+  static constexpr uint8_t AUTO_TURN_UNATTENDED_PAGE_LIMIT = 10;
+  uint8_t unattendedAutoTurns = 0;
+  // Running auto turn reports activity this often, under the shortest (1 min) sleep timeout.
+  static constexpr unsigned long AUTO_TURN_AWAKE_PULSE_MS = 30000UL;
+  unsigned long lastAwakePulseMs = 0UL;
+  // Each nudge scales the learned speed by NUDGE_PERCENT.
+  static constexpr uint16_t NUDGE_PERCENT = 10;
   // readingSpeedWpm changed in RAM and still needs saving.
   bool dirtyReadingSpeedWpm = false;
   bool showBookmarkMessage = false;
@@ -108,7 +118,6 @@ class EpubReaderActivity final : public ReaderActivity {
   bool overlayRefreshPending = false;
   void pushOverlayRefresh();
   void settleOverlayRefresh();
-  int autoTurnOption = 0;  // current auto page-turn rate index (More panel)
   std::vector<EpubReaderMenuActivity::MenuItem> moreItems;
 
   // Footnote support
@@ -194,6 +203,11 @@ class EpubReaderActivity final : public ReaderActivity {
   void adaptReadingSpeed(bool isForwardTurn, unsigned long elapsedMs);
   void manualPageTurn(bool isForwardTurn);
   void flushReadingSpeed();
+  void nudgeReadingSpeed(bool faster);
+  // Estimated minutes left in the chapter at the learned speed, -1 when there is no estimate.
+  int chapterMinutesLeft() const;
+  // Option the auto page-turn picker opens on: the running one, else the last one used.
+  int autoTurnPickerIndex() const;
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();
@@ -226,6 +240,7 @@ class EpubReaderActivity final : public ReaderActivity {
   ~EpubReaderActivity() override;
 
   void onExit() override;
+  bool preventAutoSleep() override;
   void loop() override;
 
   bool pageTurn(bool isForward) override;

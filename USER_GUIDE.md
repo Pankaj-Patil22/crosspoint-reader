@@ -630,6 +630,12 @@ Auto Page Turn automatically advances pages at a set interval, useful for hands-
 
 The status bar shows the current speed (e.g. `Auto Turn Enabled: 230 wpm`), or `Uncalibrated` before any speed has been learned. Select **Reset Reading Speed** in the Reader Menu to start fresh.
 
+While Smart mode is running, **hold Next Page** to speed the learned speed up by 10%, or **hold Previous Page** to slow it down. This replaces the **Long-press** page button setting while Smart mode is on. Once a speed has been learned, the status bar and the Reader Menu also estimate the reading time left in the chapter (e.g. `~12 min left`).
+
+The picker opens on the mode you used last, so switching auto page turn back on takes one press.
+
+Auto page turn keeps the device awake while it runs. If 10 pages turn without any button press, it pauses on its own so an unattended device doesn't read on through the book, and the normal sleep timer takes over.
+
 **Pausing:** when **Short Power Button Click** in **[Controls Settings](#363-controls)** is set to "Ignore" (the default), a short press of the power button pauses auto page turn and the status bar shows `Auto Turn Paused`. Press it again to resume with a fresh timer. Pressing **Confirm** or **Back** still turns auto page turn off.
 
 ### Tilt Page Turn (X3 only)
