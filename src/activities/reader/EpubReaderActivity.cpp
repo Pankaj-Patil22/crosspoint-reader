@@ -2889,8 +2889,8 @@ void EpubReaderActivity::adaptReadingSpeed(const bool isForwardTurn, const unsig
   const uint16_t newWpm = static_cast<uint16_t>(clamped);
   if (newWpm == SETTINGS.readingSpeedWpm) return;
 
-  LOG_DBG("ERS", "Adaptive WPM: %s turn, elapsed=%lums, obs=%u, %u -> %u wpm", isForwardTurn ? "fwd" : "bwd",
-          elapsedMs, observedWpm, currentWpm, newWpm);
+  LOG_DBG("ERS", "Adaptive WPM: %s turn, elapsed=%lums, obs=%u, %u -> %u wpm", isForwardTurn ? "fwd" : "bwd", elapsedMs,
+          observedWpm, currentWpm, newWpm);
   SETTINGS.readingSpeedWpm = newWpm;
   dirtyReadingSpeedWpm = true;
 }
